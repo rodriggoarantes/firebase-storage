@@ -2,12 +2,14 @@
 
 - Firebase minimal reproducible example of functions to storage
 
-# use
+### How to use
 
 yarn install
 
-- local test
-  yarn dev
+###### For local test
 
-- deploy to Firebase Functions
-  yarn deploy
+- yarn dev
+
+###### For deploy to Firebase Functions
+
+- yarn deploy
