@@ -1,6 +1,4 @@
 import * as admin from 'firebase-admin';
-import * as crypto from 'crypto';
-import { extname } from 'path';
 
 class FileService {
   /**
@@ -9,29 +7,40 @@ class FileService {
    * @param filename
    */
   async uploadStream(stream: any, filename: string) {
-    const ext = extname(filename);
-    const finalFileName = `avatars/${this.hashName(filename)}${ext}`;
+    console.log(`uploadStream`);
+    const finalFileName = `avatars/${this.hashName(filename)}`;
 
-    // get the bucket of Storage
-    const storageBucket: any = admin.storage().bucket();
-    // create file with hash name and folder 'avatars'
-    const file = await storageBucket.file(finalFileName);
+    console.log(`uploadStream: name : ${finalFileName}`);
 
-    const blobStream = file.createWriteStream({
-      gzip: true,
-      destination: finalFileName,
-      public: true,
-      metadata: {
-        contentType: 'image/jpeg',
-        cacheControl: 'public, max-age=31536000'
-      }
-    });
-    await blobStream.end(stream);
+    try {
+      // get the bucket of Storage
+      const storageBucket: any = admin.storage().bucket();
 
-    return {
-      filename: file.name,
-      url: `https://storage.googleapis.com/aircnc-server.appspot.com/${file.name}`
-    };
+      // create file with hash name and folder 'avatars'
+      const file = await storageBucket.file(finalFileName);
+
+      console.log(`file: name : ${file.name}`);
+
+      const blobStream = file.createWriteStream({
+        gzip: true,
+        destination: finalFileName,
+        public: true,
+        metadata: {
+          contentType: 'image/jpeg',
+          cacheControl: 'public, max-age=31536000'
+        }
+      });
+      await blobStream.end(stream);
+
+      return {
+        filename: file.name,
+        url: `https://storage.googleapis.com/aircnc-server.appspot.com/${file.name}`
+      };
+    } catch (error) {
+      console.log(`ERRO : ${error} ${JSON.stringify(error)}`);
+    }
+
+    return {};
   }
 
   /**
@@ -40,12 +49,34 @@ class FileService {
    */
   private hashName(originalName: string) {
     const dateStr = new Date().getTime();
-    const nameKey = originalName + dateStr;
-    const hashname = crypto
-      .createHash('md5')
-      .update(nameKey)
-      .digest('hex');
-    return hashname;
+    const ext =
+      originalName && originalName.indexOf('.') > -1
+        ? originalName.substring(
+            originalName.indexOf('.') + 1,
+            originalName.length
+          )
+        : 'jpeg';
+
+    try {
+      return `${dateStr}.${this.randHex(8)}.${ext}`;
+    } catch (error) {
+      console.log(`ERRO - hashName : ${error} ${JSON.stringify(error)}`);
+    }
+
+    return originalName;
+  }
+
+  private randHex(len: number): string {
+    const maxlen = 8;
+    const min = Math.pow(16, Math.min(len, maxlen) - 1);
+    const max = Math.pow(16, Math.min(len, maxlen)) - 1;
+    const n = Math.floor(Math.random() * (max - min + 1)) + min;
+
+    let r = n.toString(16);
+    while (r.length < len) {
+      r = r + this.randHex(len - maxlen);
+    }
+    return r.toUpperCase();
   }
 }
 
