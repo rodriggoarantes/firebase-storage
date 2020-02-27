@@ -34,6 +34,7 @@ declare global {
   namespace Express {
     interface Request {
       files: Files;
+      rawBody: any;
     }
   }
 }
@@ -81,7 +82,7 @@ export default function uploadFileMiddleware(
       console.log(`files`);
 
       const fileWritePromises: Array<Promise<void>> = [];
-      let fileBuffer: Buffer = new Buffer('');
+      let fileBuffer: Buffer = Buffer.from('');
       req.files = {};
 
       busboy.on('field', (key, value) => {
@@ -134,21 +135,21 @@ export default function uploadFileMiddleware(
         console.log(`finish -> busboy`);
         await Promise.all(fileWritePromises);
         console.log(`finish -> promisses ${fileWritePromises.length}`);
-
-        const { fieldname, path, size } = req.files['file'][0];
-        console.log(
-          `finish -> request ${JSON.stringify({ fieldname, path, size })}`
-        );
+        console.log(`finish -> request ${req.files.keys}`);
         next();
       });
+
+      console.log(`raw: ${req.rawBody}`);
+      if (req && req.rawBody) {
+        busboy.end(req.rawBody);
+      }
+      req.pipe(busboy);
     }
 
     busboy.on('error', (err: Error) => {
       console.log(`${req.method} ${req.url} ERROR`, err);
       next(err);
     });
-
-    req.pipe(busboy);
   } catch (error) {
     console.log(`Erro ao gerar arquivo: ${error}`);
   }
