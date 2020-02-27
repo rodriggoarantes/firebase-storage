@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import * as Busboy from 'busboy';
-import * as fs from 'fs-extra';
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -23,6 +23,7 @@ export interface File {
   encoding?: string;
   mimetype?: string;
   size?: number;
+  buffer?: Buffer;
 }
 
 export interface Files {
@@ -37,91 +38,120 @@ declare global {
   }
 }
 
-export class UploadFile {
-  private options: Options = defaultOptions;
+export default function uploadFileMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const options: Options = defaultOptions;
 
-  constructor(customOptions: Options) {
-    this.options = Object.assign({}, this.options, customOptions || {});
-  }
-
-  public middleware(req: Request, res: Response, next: NextFunction) {
-    try {
-      if (this.isNotToDo(req)) {
-        next();
-      }
-
-      const uploads: any = {};
-      const busboy = new Busboy({ headers: req.headers });
-
-      if (this.options.files) {
-        const fileWritePromises: Array<Promise<void>> = [];
-
-        busboy.on('file', (fieldname, file, filename) => {
-          console.log(`Processed file ${filename}`);
-          const filepath = path.join(this.options.uploadPath, filename);
-          uploads[fieldname] = filepath;
-
-          const writeStream = fs.createWriteStream(filepath);
-          file.pipe(writeStream);
-
-          const promise = new Promise<void>((resolve, reject) => {
-            file.on('end', async () => {
-              const stats = await fs.stat(filepath);
-
-              if (!req.files.hasOwnProperty(fieldname)) {
-                req.files[fieldname] = [];
-              }
-
-              req.files[fieldname].push({
-                fieldname,
-                path: filepath,
-                size: stats.size,
-                filename
-              });
-
-              writeStream.end();
-            });
-            writeStream.on('finish', resolve);
-            writeStream.on('error', reject);
-          });
-          fileWritePromises.push(promise);
-        });
-
-        busboy.on('finish', async () => {
-          await Promise.all(fileWritePromises);
-          next();
-        });
-      }
-    } catch (error) {}
-  }
-
-  private isNotToDo(req: Request) {
-    return (
-      this.isNotPost(req.method) ||
-      this.isNotMultipart(req.headers['content-type']) ||
-      this.isNotContains()
-    );
-  }
-
-  private isNotPost(method: string) {
+  const isNotPost = (method: string) => {
+    console.log(`isNotPost ${method}`);
     return method !== 'POST';
-  }
+  };
 
-  private isNotMultipart(contentType: string) {
+  const isNotMultipart = (contentType: string) => {
+    console.log(`contentType ${contentType}`);
     return (
-      this.options.multipartOnly &&
+      options.multipartOnly &&
       (!contentType || !contentType.includes('multipart/form-data'))
     );
+  };
+
+  const isNotToDo = (req: Request) => {
+    return isNotPost(req.method) || isNotMultipart(req.headers['content-type']);
+  };
+
+  try {
+    console.log(`uploadFileMiddleware`);
+
+    if (isNotToDo(req)) {
+      next();
+      return;
+    }
+
+    const busboy = new Busboy({
+      headers: req.headers,
+      limits: {
+        fileSize: 10 * 1024 * 1024
+      }
+    });
+
+    if (options.files) {
+      console.log(`files`);
+
+      const fileWritePromises: Array<Promise<void>> = [];
+      let fileBuffer: Buffer = new Buffer('');
+      req.files = {};
+
+      busboy.on('field', (key, value) => {
+        req.body[key] = value;
+      });
+
+      busboy.on('file', (fieldname, file, filename, encoding, mimetype) => {
+        console.log(`Processed : ${fieldname} ${filename}`);
+        const filepath = path.join(options.uploadPath, filename);
+
+        const writeStream = fs.createWriteStream(filepath);
+        file.pipe(writeStream);
+
+        req.files[fieldname] = [];
+
+        const promise = new Promise<void>((resolve, reject) => {
+          file.on('data', data => {
+            fileBuffer = Buffer.concat([fileBuffer, data]);
+          });
+
+          file.on('end', () => {
+            console.log(`file -> end`);
+            const size = Buffer.byteLength(fileBuffer);
+
+            req.files[fieldname].push({
+              fieldname,
+              path: filepath,
+              buffer: fileBuffer,
+              size,
+              filename,
+              encoding,
+              mimetype
+            });
+
+            writeStream.end();
+          });
+
+          file.on('error', err => {
+            console.log(`file -> error ${err}`);
+          });
+
+          writeStream.on('finish', resolve);
+          writeStream.on('error', reject);
+        });
+
+        fileWritePromises.push(promise);
+      });
+
+      busboy.on('finish', async () => {
+        console.log(`finish -> busboy`);
+        await Promise.all(fileWritePromises);
+        console.log(`finish -> promisses ${fileWritePromises.length}`);
+
+        const { fieldname, path, size } = req.files['file'][0];
+        console.log(
+          `finish -> request ${JSON.stringify({ fieldname, path, size })}`
+        );
+        next();
+      });
+    }
+
+    busboy.on('error', (err: Error) => {
+      console.log(`${req.method} ${req.url} ERROR`, err);
+      next(err);
+    });
+
+    req.pipe(busboy);
+  } catch (error) {
+    console.log(`Erro ao gerar arquivo: ${error}`);
   }
 
-  private isNotContains() {
-    const fields = this.options.fields;
-    const files = this.options.files;
-    return (
-      (!fields || (fields instanceof Array && !fields.length)) &&
-      (!files || (files instanceof Array && !files.length))
-    );
-  }
+  console.log(`finish -> middleware`);
 }
-
-export default new UploadFile({}).middleware;

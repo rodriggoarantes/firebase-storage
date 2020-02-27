@@ -6,7 +6,7 @@ import { Request, Response } from 'express';
 class StatusController {
   status(_: Request, res: Response) {
     const dataAtual: Date = new Date();
-    return res.json({ app: 'FIREBASE - STORAGE', time: new Date() });
+    return res.json({ app: 'FIREBASE - STORAGE', time: dataAtual });
   }
 }
 
