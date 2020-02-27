@@ -39,11 +39,7 @@ declare global {
   }
 }
 
-export default function uploadFileMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+export default async (req: Request, res: Response, next: NextFunction) => {
   const options: Options = defaultOptions;
 
   const isNotPost = (method: string) => {
